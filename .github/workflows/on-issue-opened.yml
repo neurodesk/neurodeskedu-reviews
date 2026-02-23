@@ -1,0 +1,164 @@
+# Inject nd-review metadata block when a review issue is opened.
+#
+# GitHub issue forms render fields as Markdown headings + values.
+# This workflow:
+#   1. Parses the source_path from the form.
+#   2. Auto-generates a UUID (review_id).
+#   3. Appends a machine-readable <!-- nd-review --> block to the issue body.
+#   4. Updates the issue title.
+#   5. Dispatches to neurodesk/neurodeskedu to write the UUID into the
+#      notebook/page metadata (so the badge system can link them).
+
+name: Prepare review metadata
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  inject-metadata:
+    if: contains(github.event.issue.labels.*.name, 'review:queued')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Parse form, generate UUID, inject metadata block
+        id: inject
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const crypto = require('crypto');
+            const body = context.payload.issue.body || '';
+
+            // If detect-new-notebooks already injected an nd-review block,
+            // skip — the issue is fully set up and the UUID is already
+            // being injected into the notebook via the detect workflow.
+            if (/<!--\s*nd-review\s*\n[\s\S]*?review_id:/.test(body)) {
+              core.info(
+                'Issue already has an nd-review block (created by ' +
+                'detect-new-notebooks). Skipping UUID generation.'
+              );
+              core.setOutput('skip_dispatch', 'true');
+              return;
+            }
+
+            // GitHub issue forms render as:
+            //   ### Label
+            //
+            //   value
+            const sourcePathMatch = body.match(
+              /### Source path \(relative to books\/\)\s*\n\s*\n\s*(\S+)/
+            );
+
+            if (!sourcePathMatch) {
+              core.setFailed(
+                'Could not parse source_path from issue body. ' +
+                'Ensure the issue was created using the review template.'
+              );
+              return;
+            }
+
+            const sourcePath = sourcePathMatch[1];
+
+            // Auto-generate a UUID v4
+            const reviewId = crypto.randomUUID();
+
+            // Append the machine-readable metadata block
+            const metaBlock = [
+              '',
+              '',
+              '<!-- nd-review',
+              `review_id: ${reviewId}`,
+              `source_path: ${sourcePath}`,
+              '-->',
+            ].join('\n');
+
+            // Update issue body with metadata and fix the title
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body + metaBlock,
+              title: `Review: ${sourcePath}`,
+            });
+
+            core.info(
+              `Injected nd-review metadata: review_id=${reviewId}, ` +
+              `source_path=${sourcePath}`
+            );
+
+            // Pass outputs to the dispatch step
+            core.setOutput('review_id', reviewId);
+            core.setOutput('source_path', sourcePath);
+            core.setOutput('skip_dispatch', 'false');
+
+            // Build links to the rendered page
+            const pageSlug = sourcePath
+              .replace(/\.ipynb$/, '.html')
+              .replace(/\.md$/, '.html');
+            const stagingUrl = `https://neurodesk.github.io/neurodeskedu/${pageSlug}`;
+            const prodUrl = `https://neurodesk.org/edu/${pageSlug}`;
+            const sourceUrl = `https://github.com/neurodesk/neurodeskedu/blob/main/books/${sourcePath}`;
+
+            // Post a summary comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                `📋 **Review initialised.**`,
+                ``,
+                `| Field | Value |`,
+                `|-------|-------|`,
+                `| Review ID | \`${reviewId}\` |`,
+                `| Source path | [\`${sourcePath}\`](${sourceUrl}) |`,
+                `| Rendered page | [staging](${stagingUrl}) · [production](${prodUrl}) |`,
+                ``,
+                `The UUID has been embedded in this issue. ` +
+                `To link the badge on the site, ensure the notebook/page ` +
+                `metadata contains \`nd_review_id: ${reviewId}\`.`,
+              ].join('\n'),
+            });
+
+      - name: Dispatch UUID to neurodeskedu repo
+        if: steps.inject.outputs.skip_dispatch != 'true'
+        uses: actions/github-script@v7
+        env:
+          CONTENT_REPO_OWNER: neurodesk
+          CONTENT_REPO_NAME: neurodeskedu
+          REVIEW_ID: ${{ steps.inject.outputs.review_id }}
+          SOURCE_PATH: ${{ steps.inject.outputs.source_path }}
+        with:
+          github-token: ${{ secrets.NEURODESKEDU_DISPATCH_TOKEN }}
+          script: |
+            const reviewId = process.env.REVIEW_ID;
+            const sourcePath = process.env.SOURCE_PATH;
+
+            if (!reviewId || !sourcePath) {
+              core.warning('Missing review_id or source_path from previous step. Skipping dispatch.');
+              return;
+            }
+
+            try {
+              await github.rest.repos.createDispatchEvent({
+                owner: process.env.CONTENT_REPO_OWNER,
+                repo: process.env.CONTENT_REPO_NAME,
+                event_type: 'inject-review-id',
+                client_payload: {
+                  review_id: reviewId,
+                  source_path: sourcePath,
+                  issue_number: context.issue.number,
+                  reviews_repo: `${context.repo.owner}/${context.repo.repo}`,
+                },
+              });
+              core.info(
+                `Dispatched inject-review-id to ${process.env.CONTENT_REPO_OWNER}/${process.env.CONTENT_REPO_NAME}`
+              );
+            } catch (err) {
+              core.warning(
+                `Could not dispatch to content repo: ${err.message}. ` +
+                `The UUID must be added to the notebook metadata manually ` +
+                `or via the detect-new-notebooks workflow.`
+              );
+            }

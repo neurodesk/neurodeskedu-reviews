@@ -2,9 +2,18 @@
 
 # Reviews for NeurodeskEDU
 
-This is the GitHub repository used to track the progress of reviews for NeurodeskEDU. You can view the notebooks currently in review [here](UPDATE LINK). :construction:
+This repository tracks peer reviews for [NeurodeskEDU](https://neurodesk.org/edu/) notebooks and pages.
 
-If you're looking for more information about the Neurodesk project you might like to take a look at the Neurodesk website: http://neurodesk.org. Alternatively, if you're looking for the open source application that powers Neurodesk then head over here: https://github.com/neurodesk.
+Each notebook carries a unique Review ID (UUID) in its metadata. A corresponding GitHub Issue here tracks the review lifecycle. Labels drive the workflow — assigning reviewers, posting checklists, recording commit SHAs, and triggering badge rebuilds are all automated via GitHub Actions.
+
+### Review lifecycle
+
+| Phase | Label | What happens |
+|-------|-------|-------------|
+| **Queued** | `review:queued` | Issue created, UUID generated, metadata injected |
+| **In progress** | `review:in-progress` | Reviewer checklist posted |
+| **Accepted** | `reviewed` | Commit SHA recorded, badge turns green |
+| **Minor update** | `review:refresh` | SHA re-stamped without full re-review |
 
 ## Code of Conduct
 

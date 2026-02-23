@@ -2,11 +2,11 @@
 
 ### Conflict of interest
 
-- [ ] As the reviewer I confirm that I have read the [Neurodesk conflict of interest policy](TO COME) and that there are no conflicts of interest for me to review this work.
+- [ ] As the reviewer I confirm that I have read the Neurodesk conflict of interest policy and that there are no conflicts of interest for me to review this work.
 
 ### Code of Conduct
 
-- [ ] I confirm that I read and will adhere to the [Neurodesk code of conduct](UPDATE LINK).
+- [ ] I confirm that I read and will adhere to the Neurodesk code of conduct.
 
 ### General checks
 
@@ -15,7 +15,7 @@
 - [ ] **Date:** Is the notebook dated?
 - [ ] **Citations:** Is the software contained in the notebook properly cited?
 - [ ] **References:** Do all archival references that should have a DOI list one (e.g., papers, datasets, software)?
-- [ ] **Format:** Does the notebook follow the NeurodeskEDU template? (LINK TO TEMPLATE)
+- [ ] **Format:** Does the notebook follow the NeurodeskEDU template?
 
 ### Functionality
 
@@ -34,5 +34,5 @@
 - [ ] **Content scope and length:** Is the content substantial for learning a given topic? Is the length of the notebook appropriate?
 - [ ] **Explanations:** Are the steps of the analysis in the notebook sufficiently documented?
 - [ ] **Pedagogy:** Is the notebook easy to follow? Does it observe guidance on cognitive load? (working memory limits of 7 +/- 2 chunks of information)
-- [ ] **Teaching:**Could someone else teach with this notebook, given the right expertise?
+- [ ] **Teaching:** Could someone else teach with this notebook, given the right expertise?
 - [ ] **Content quality:** Is the writing of good quality, concise, engaging? Are the code components well crafted? Does the notebook seem complete?

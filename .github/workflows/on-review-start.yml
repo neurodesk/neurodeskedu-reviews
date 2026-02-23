@@ -1,0 +1,134 @@
+# Post the reviewer checklist when a review enters the in-progress phase.
+#
+# Triggered when the `review:in-progress` label is added to an issue.
+# Reads the checklist template from .buffy/templates/, replaces
+# placeholders with actual GitHub handles, and posts it as a comment.
+
+name: Post reviewer checklist
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  post-checklist:
+    if: github.event.label.name == 'review:in-progress'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post reviewer checklist as comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const labels = issue.labels.map(l => l.name);
+
+            // --- Guardrail G1: warn if no reviewer is assigned ---
+            const assignees = (issue.assignees || []).map(a => a.login).filter(Boolean);
+            if (assignees.length === 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  `⚠️ **No reviewer assigned.**`,
+                  ``,
+                  `The \`review:in-progress\` label was added but no one ` +
+                  `is assigned to this issue. The checklist will use a ` +
+                  `placeholder name.`,
+                  ``,
+                  `Please assign a reviewer using the **Assignees** ` +
+                  `panel on the right.`,
+                ].join('\n'),
+              });
+            }
+
+            // --- Guardrail G3: detect re-review of already-reviewed issue ---
+            if (labels.includes('reviewed')) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  `ℹ️ **Re-review started.**`,
+                  ``,
+                  `This issue was already marked as \`reviewed\`. A new ` +
+                  `checklist has been posted below. The previous review ` +
+                  `SHA will be overwritten when this review is re-approved.`,
+                ].join('\n'),
+              });
+            }
+
+            // Read the reviewer checklist template
+            let checklist;
+            try {
+              checklist = fs.readFileSync(
+                '.buffy/templates/reviewer_checklist.md',
+                'utf8'
+              );
+            } catch (e) {
+              core.setFailed(`Template file missing: ${e.message}`);
+              return;
+            }
+
+            // Determine reviewer(s) and author
+            // Note: template already has @ before {{sender}}, so don't add @
+            const reviewerName = assignees.length > 0
+              ? assignees.join(' & @')
+              : 'reviewer';
+            const author = issue.user?.login || 'author';
+
+            // Replace Buffy-style placeholders
+            checklist = checklist.replace(/\{\{sender\}\}/g, reviewerName);
+            checklist = checklist.replace(
+              /\{\{author-handle\}\}/g,
+              `@${author}`
+            );
+
+            // Extract source_path and build links to the rendered page
+            const metaMatch = body.match(
+              /<!--\s*nd-review\s*\n([\s\S]*?)-->/
+            );
+            if (metaMatch) {
+              const block = metaMatch[1];
+              const sp = (block.match(/source_path:\s*(\S+)/) || [])[1];
+              if (sp) {
+                const pageSlug = sp
+                  .replace(/\.ipynb$/, '.html')
+                  .replace(/\.md$/, '.html');
+                const sourceUrl =
+                  `https://github.com/neurodesk/neurodeskedu/blob/main/books/${sp}`;
+                const stagingUrl =
+                  `https://neurodesk.github.io/neurodeskedu/${pageSlug}`;
+                const prodUrl =
+                  `https://neurodesk.org/edu/${pageSlug}`;
+
+                checklist += [
+                  '',
+                  '',
+                  '---',
+                  '### Quick links',
+                  '',
+                  `- **Source:** [\`${sp}\`](${sourceUrl})`,
+                  `- **Rendered page:** [staging](${stagingUrl}) · [production](${prodUrl})`,
+                ].join('\n');
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: checklist,
+            });
+
+            core.info(
+              `Posted reviewer checklist for @${reviewerName} on issue #${issue.number}`
+            );

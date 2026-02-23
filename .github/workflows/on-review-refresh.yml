@@ -1,0 +1,236 @@
+# Quick SHA refresh for minor edits (typos, punctuation, formatting).
+#
+# When an editor adds the `review:refresh` label to a reviewed issue,
+# this workflow re-records the latest commit SHA without triggering the
+# full review ceremony (no checklist, no congratulations).
+#
+# Use case: a reviewed notebook had a typo fixed — the badge went Stale,
+# but no re-review is needed. The editor adds `review:refresh` to
+# acknowledge the change and restore the green "Reviewed" badge.
+
+name: Refresh review SHA
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  refresh-sha:
+    if: github.event.label.name == 'review:refresh'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Guardrail — require reviewed label
+        id: guard
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.issue.labels.map(l => l.name);
+
+            // G4: review:refresh only makes sense on reviewed issues
+            if (!labels.includes('reviewed')) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: [
+                  `⚠️ **\`review:refresh\` requires the \`reviewed\` label.**`,
+                  ``,
+                  `This label is meant for minor updates to an ` +
+                  `already-reviewed notebook. The issue does not ` +
+                  `currently have the \`reviewed\` label.`,
+                  ``,
+                  `If you meant to approve this review, add the ` +
+                  `\`reviewed\` label instead.`,
+                ].join('\n'),
+              });
+
+              // Remove the refresh label and skip
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: 'review:refresh',
+                });
+              } catch (e) { /* already removed */ }
+
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            core.setOutput('skip', 'false');
+
+      - name: Extract nd-review metadata
+        if: steps.guard.outputs.skip != 'true'
+        id: meta
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const m = body.match(/<!--\s*nd-review\s*\n([\s\S]*?)-->/);
+            if (!m) {
+              core.setFailed(
+                'Issue body does not contain an <!-- nd-review --> block.'
+              );
+              return;
+            }
+
+            const block = m[1];
+            const reviewId = (block.match(/review_id:\s*(\S+)/) || [])[1];
+            const sourcePath = (block.match(/source_path:\s*(\S+)/) || [])[1];
+
+            if (!reviewId || !sourcePath) {
+              core.setFailed(
+                'Missing review_id or source_path in nd-review block.'
+              );
+              return;
+            }
+
+            core.setOutput('review_id', reviewId);
+            core.setOutput('source_path', sourcePath);
+
+      - name: Look up latest commit SHA
+        if: steps.guard.outputs.skip != 'true'
+        id: sha
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sourcePath = '${{ steps.meta.outputs.source_path }}';
+
+            const commits = await github.rest.repos.listCommits({
+              owner: 'neurodesk',
+              repo: 'neurodeskedu',
+              path: `books/${sourcePath}`,
+              per_page: 1,
+              sha: 'main',
+            });
+
+            if (commits.data.length === 0) {
+              core.setFailed(
+                `No commits found for books/${sourcePath}`
+              );
+              return;
+            }
+
+            const sha = commits.data[0].sha;
+            core.setOutput('commit_sha', sha);
+
+      - name: Update issue body with new SHA
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = '${{ steps.sha.outputs.commit_sha }}';
+            const today = new Date().toISOString().split('T')[0];
+
+            // Fetch current body (not stale payload) to avoid overwriting concurrent edits
+            const { data: currentIssue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const body = currentIssue.body || '';
+
+            const updated = body.replace(
+              /<!--\s*nd-review\s*\n([\s\S]*?)-->/,
+              (match, block) => {
+                let lines = block.trimEnd().split('\n');
+
+                lines = lines.filter(l =>
+                  !l.trim().startsWith('review_commit_sha:') &&
+                  !l.trim().startsWith('reviewed_at:')
+                );
+
+                lines.push(`review_commit_sha: ${sha}`);
+                lines.push(`reviewed_at: ${today}`);
+
+                return `<!-- nd-review\n${lines.join('\n')}\n-->`;
+              }
+            );
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: updated,
+            });
+
+      - name: Post confirmation and fix labels
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = '${{ steps.sha.outputs.commit_sha }}';
+            const today = new Date().toISOString().split('T')[0];
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                `🔄 **Review SHA refreshed** (minor update acknowledged).`,
+                ``,
+                `| Field | Value |`,
+                `|-------|-------|`,
+                `| Source | \`${{ steps.meta.outputs.source_path }}\` |`,
+                `| Commit | [\`${sha.slice(0, 7)}\`](https://github.com/neurodesk/neurodeskedu/commit/${sha}) |`,
+                `| Date | ${today} |`,
+                ``,
+                `The badge will return to **Reviewed** on the next site build.`,
+              ].join('\n'),
+            });
+
+            // Remove the refresh label so it can be re-used later
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'review:refresh',
+              });
+            } catch (e) {
+              // Label may already be removed
+            }
+
+            // Ensure 'reviewed' label is still present (editors sometimes
+            // accidentally remove it when adding review:refresh via the UI)
+            const labels = (
+              await github.rest.issues.listLabelsOnIssue({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              })
+            ).data.map(l => l.name);
+
+            if (!labels.includes('reviewed')) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['reviewed'],
+              });
+              core.info('Re-added reviewed label (was accidentally removed).');
+            }
+
+      - name: Dispatch reviews-updated to content repo
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.NEURODESKEDU_DISPATCH_TOKEN }}
+          script: |
+            try {
+              await github.rest.repos.createDispatchEvent({
+                owner: 'neurodesk',
+                repo:  'neurodeskedu',
+                event_type: 'reviews-updated',
+              });
+              core.info('Dispatched reviews-updated to neurodesk/neurodeskedu — badge rebuild triggered.');
+            } catch (err) {
+              core.warning(
+                `Could not dispatch reviews-updated: ${err.message}. ` +
+                `The badge registry will update on the next scheduled run (every 6h).`
+              );
+            }

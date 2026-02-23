@@ -1,0 +1,45 @@
+name: "\U0001F4D6 Notebook / Page Review"
+description: Open a review for a NeurodeskEDU notebook or page.
+title: "Review: <source-path-here>"
+labels:
+  - "review:queued"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## New Review Request
+
+        Provide the path to the notebook or page to review. A unique
+        **Review ID** (UUID) will be generated automatically by the
+        workflow — no need to create one manually.
+
+  - type: input
+    id: source_path
+    attributes:
+      label: Source path (relative to books/)
+      description: >
+        Path to the notebook or page inside `books/`, for example
+        `tutorials/electrophysiology/EEG_mne-python.md`.
+      placeholder: "tutorials/electrophysiology/EEG_mne-python.md"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Any additional context for the reviewer.
+      placeholder: "Optional notes..."
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        #### What happens next
+
+        1. A UUID is auto-generated and a metadata block is injected into this issue.
+        2. A summary comment is posted with links to the source file and rendered page.
+        3. An editor assigns a reviewer and adds the `review:in-progress` label.
+        4. A reviewer checklist (16 items) is posted automatically as a comment.
+        5. When all checklist items are ticked, the editor is notified automatically.
+        6. The editor adds the `reviewed` label — a GitHub Action records the commit SHA and posts a confirmation.

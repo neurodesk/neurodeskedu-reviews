@@ -1,1 +1,0 @@
-OK, I've started the review over in CHANGE LINK/{{review_issue_id}}.

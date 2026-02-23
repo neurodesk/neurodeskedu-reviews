@@ -1,0 +1,245 @@
+# Handle review completion: record commit SHA, post congratulations,
+# and post the post-review checklist.
+#
+# Triggered when the `reviewed` label is added to an issue.
+# Combines three actions that all happen at acceptance time:
+#   1. Record the latest commit SHA for the reviewed file
+#   2. Post a congratulatory message
+#   3. Post the post-review checklist for authors and editors
+
+name: Review complete
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  complete-review:
+    if: github.event.label.name == 'reviewed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guardrail — warn if review process was skipped
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.issue.labels.map(l => l.name);
+
+            // G2: warn if review:in-progress was never added
+            if (!labels.includes('review:in-progress')) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: [
+                  `ℹ️ **Review approved without checklist process.**`,
+                  ``,
+                  `The \`reviewed\` label was added but this issue ` +
+                  `was never marked \`review:in-progress\`. The ` +
+                  `reviewer checklist was not posted.`,
+                  ``,
+                  `If this was intentional (e.g. trusted reviewer, ` +
+                  `batch approval), ignore this note.`,
+                ].join('\n'),
+              });
+            }
+
+      - name: Extract nd-review metadata from issue body
+        id: meta
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const m = body.match(/<!--\s*nd-review\s*\n([\s\S]*?)-->/);
+            if (!m) {
+              core.setFailed(
+                'Issue body does not contain an <!-- nd-review --> block. ' +
+                'Ensure the issue was created using the review template.'
+              );
+              return;
+            }
+
+            const block = m[1];
+            const reviewId = (block.match(/review_id:\s*(\S+)/) || [])[1];
+            const sourcePath = (block.match(/source_path:\s*(\S+)/) || [])[1];
+
+            if (!reviewId || !sourcePath) {
+              core.setFailed(
+                'Missing review_id or source_path in nd-review block.'
+              );
+              return;
+            }
+
+            core.setOutput('review_id', reviewId);
+            core.setOutput('source_path', sourcePath);
+
+      - name: Look up latest commit SHA for source file
+        id: sha
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sourcePath = '${{ steps.meta.outputs.source_path }}';
+
+            const commits = await github.rest.repos.listCommits({
+              owner: 'neurodesk',
+              repo: 'neurodeskedu',
+              path: `books/${sourcePath}`,
+              per_page: 1,
+              sha: 'main',
+            });
+
+            if (commits.data.length === 0) {
+              core.setFailed(
+                `No commits found for books/${sourcePath} in neurodesk/neurodeskedu`
+              );
+              return;
+            }
+
+            const sha = commits.data[0].sha;
+            core.setOutput('commit_sha', sha);
+            core.info(`Latest commit for ${sourcePath}: ${sha}`);
+
+      - name: Update issue body with SHA and date
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = '${{ steps.sha.outputs.commit_sha }}';
+            const today = new Date().toISOString().split('T')[0];
+
+            // Fetch current body (not stale payload) to avoid overwriting concurrent edits
+            const { data: currentIssue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const body = currentIssue.body || '';
+
+            const updated = body.replace(
+              /<!--\s*nd-review\s*\n([\s\S]*?)-->/,
+              (match, block) => {
+                let lines = block.trimEnd().split('\n');
+
+                // Remove any existing SHA / date lines
+                lines = lines.filter(l =>
+                  !l.trim().startsWith('review_commit_sha:') &&
+                  !l.trim().startsWith('reviewed_at:')
+                );
+
+                lines.push(`review_commit_sha: ${sha}`);
+                lines.push(`reviewed_at: ${today}`);
+
+                return `<!-- nd-review\n${lines.join('\n')}\n-->`;
+              }
+            );
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: updated,
+            });
+
+      - name: Post SHA confirmation comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = '${{ steps.sha.outputs.commit_sha }}';
+            const today = new Date().toISOString().split('T')[0];
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                `✅ **Review SHA recorded.**`,
+                ``,
+                `| Field | Value |`,
+                `|-------|-------|`,
+                `| Source | \`${{ steps.meta.outputs.source_path }}\` |`,
+                `| Commit | [\`${sha.slice(0, 7)}\`](https://github.com/neurodesk/neurodeskedu/commit/${sha}) |`,
+                `| Date | ${today} |`,
+              ].join('\n'),
+            });
+
+      - name: Post congratulations
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let goodbye;
+            try {
+              goodbye = fs.readFileSync('.buffy/templates/goodbye.md', 'utf8');
+            } catch (e) {
+              core.setFailed(`Template file missing: ${e.message}`);
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: goodbye,
+            });
+
+      - name: Post post-review checklist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let checklist;
+            try {
+              checklist = fs.readFileSync('.buffy/templates/post-review_checklist.md', 'utf8');
+            } catch (e) {
+              core.setFailed(`Template file missing: ${e.message}`);
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: checklist,
+            });
+
+      - name: Clean up intermediate labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Remove lifecycle labels that are no longer relevant
+            for (const label of ['review:queued', 'review:in-progress', 'review:checklist-complete']) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: label,
+                });
+                core.info(`Removed ${label}`);
+              } catch (e) {
+                // Label may not be present — that's fine
+              }
+            }
+
+      - name: Dispatch reviews-updated to content repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.NEURODESKEDU_DISPATCH_TOKEN }}
+          script: |
+            try {
+              await github.rest.repos.createDispatchEvent({
+                owner: 'neurodesk',
+                repo:  'neurodeskedu',
+                event_type: 'reviews-updated',
+              });
+              core.info('Dispatched reviews-updated to neurodesk/neurodeskedu — badge rebuild triggered.');
+            } catch (err) {
+              core.warning(
+                `Could not dispatch reviews-updated: ${err.message}. ` +
+                `The badge registry will update on the next scheduled run (every 6h).`
+              );
+            }

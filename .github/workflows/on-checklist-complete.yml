@@ -1,0 +1,116 @@
+# Detect when a reviewer has completed all checklist items and notify
+# the editor.
+#
+# Listens for comment edits on review issues (checkbox ticks trigger
+# GitHub's issue_comment.edited event). When all checkboxes in the
+# reviewer checklist are checked, the workflow:
+#   1. Adds a `review:checklist-complete` label
+#   2. Posts a comment tagging the issue creator (editor) to take action
+#
+# This saves editors from manually monitoring 50+ review issues.
+
+name: Detect checklist completion
+
+on:
+  issue_comment:
+    types: [edited]
+
+jobs:
+  check-completion:
+    # Only run on issues (not PRs) with the in-progress label
+    if: >-
+      !github.event.issue.pull_request &&
+      contains(github.event.issue.labels.*.name, 'review:in-progress')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Check if all checklist items are complete
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment;
+            const body = comment.body || '';
+
+            // Only process comments that look like our reviewer checklist
+            if (!body.includes('## Review checklist for')) {
+              core.info('Comment is not a reviewer checklist, skipping.');
+              return;
+            }
+
+            // Count checkboxes
+            const checked = (body.match(/- \[x\]/gi) || []).length;
+            const unchecked = (body.match(/- \[ \]/gi) || []).length;
+            const total = checked + unchecked;
+
+            core.info(
+              `Checklist progress: ${checked}/${total} items checked`
+            );
+
+            if (total === 0) {
+              core.info('No checkboxes found in comment.');
+              return;
+            }
+
+            if (unchecked > 0) {
+              core.info(
+                `${unchecked} item(s) still unchecked. Not complete yet.`
+              );
+              return;
+            }
+
+            // All boxes checked — check if we already notified
+            const labels = context.payload.issue.labels.map(l => l.name);
+            if (labels.includes('review:checklist-complete')) {
+              core.info('Already labelled as checklist-complete, skipping.');
+              return;
+            }
+
+            // Add the completion label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['review:checklist-complete'],
+            });
+
+            // Determine who to notify: the issue creator is typically the editor
+            const editor = context.payload.issue.user.login;
+            const reviewer = comment.user.login;
+
+            // Extract source_path for context
+            const issueBody = context.payload.issue.body || '';
+            const metaMatch = issueBody.match(
+              /<!--\s*nd-review\s*\n([\s\S]*?)-->/
+            );
+            let sourcePath = 'unknown';
+            if (metaMatch) {
+              const sp = (metaMatch[1].match(
+                /source_path:\s*(\S+)/
+              ) || [])[1];
+              if (sp) sourcePath = sp;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                `✅ **All checklist items completed by @${reviewer}.**`,
+                ``,
+                `@${editor} — this review is ready for your decision:`,
+                ``,
+                `- **Accept:** Add the \`reviewed\` label to record the ` +
+                `commit SHA and finalise the review.`,
+                `- **Request changes:** Post a comment with feedback ` +
+                `for the author.`,
+                ``,
+                `📄 \`${sourcePath}\``,
+              ].join('\n'),
+            });
+
+            core.info(
+              `Checklist complete! Notified @${editor} on issue ` +
+              `#${context.issue.number}`
+            );
