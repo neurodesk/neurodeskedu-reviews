@@ -40,6 +40,40 @@ jobs:
                 'detect-new-notebooks). Skipping UUID generation.'
               );
               core.setOutput('skip_dispatch', 'true');
+
+              // Still post the summary comment so the issue looks complete
+              const idMatch = body.match(/review_id:\s*(\S+)/);
+              const pathMatch = body.match(/source_path:\s*(\S+)/);
+              if (idMatch && pathMatch) {
+                const reviewId = idMatch[1];
+                const sourcePath = pathMatch[1];
+                const pageSlug = sourcePath
+                  .replace(/\.ipynb$/, '.html')
+                  .replace(/\.md$/, '.html');
+                const stagingUrl = `https://neurodesk.github.io/neurodeskedu/${pageSlug}`;
+                const prodUrl = `https://neurodesk.org/edu/${pageSlug}`;
+                const sourceUrl = `https://github.com/neurodesk/neurodeskedu/blob/main/books/${sourcePath}`;
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: [
+                    `📋 **Review initialised.**`,
+                    ``,
+                    `| Field | Value |`,
+                    `|-------|-------|`,
+                    `| Review ID | \`${reviewId}\` |`,
+                    `| Source path | [\`${sourcePath}\`](${sourceUrl}) |`,
+                    `| Rendered page | [staging](${stagingUrl}) · [production](${prodUrl}) |`,
+                    ``,
+                    `The UUID has been embedded in this issue. ` +
+                    `To link the badge on the site, ensure the notebook/page ` +
+                    `metadata contains \`nd_review_id: ${reviewId}\`.`,
+                  ].join('\n'),
+                });
+              }
+
               return;
             }
 
