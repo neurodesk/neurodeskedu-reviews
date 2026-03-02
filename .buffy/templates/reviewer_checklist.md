@@ -6,7 +6,7 @@
 
 ### Code of Conduct
 
-- [ ] I confirm that I read and will adhere to the Neurodesk code of conduct.
+- [ ] I confirm that I read and will adhere to the [Neurodesk code of conduct](https://github.com/neurodesk/neurodeskedu-reviews?tab=coc-ov-file){:target="_blank"}.
 
 ### General checks
 
