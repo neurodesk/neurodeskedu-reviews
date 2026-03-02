@@ -2,11 +2,11 @@
 
 ### Conflict of interest
 
-- [ ] As the reviewer I confirm that I have read the Neurodesk conflict of interest policy and that there are no conflicts of interest for me to review this work.
+- [ ] As the reviewer I confirm that I have read the [Neurodesk conflict of interest policy](https://neurodesk.org/edu/contribute/review.html) and that there are no conflicts of interest for me to review this work.
 
 ### Code of Conduct
 
-- [ ] I confirm that I read and will adhere to the Neurodesk code of conduct.
+- [ ] I confirm that I read and will adhere to the [Neurodesk code of conduct](https://github.com/neurodesk/neurodeskedu-reviews?tab=coc-ov-file).
 
 ### General checks
 
