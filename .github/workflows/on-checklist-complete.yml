@@ -75,8 +75,10 @@ jobs:
               labels: ['review:checklist-complete'],
             });
 
-            // Determine who to notify: the issue creator is typically the editor
-            const editor = context.payload.issue.user.login;
+            // Notify the editor (micmas manages all reviews).
+            // TODO: make this dynamic — look up who added the `review:in-progress`
+            // label via the issue events API and use that actor instead of a hardcoded handle.
+            const editor = 'micmas';
             const reviewer = comment.user.login;
 
             // Extract source_path for context
