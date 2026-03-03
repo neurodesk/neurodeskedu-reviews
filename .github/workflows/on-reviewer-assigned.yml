@@ -1,0 +1,38 @@
+# Auto-transition from review:queued to review:in-progress when a reviewer
+# is assigned to an issue.
+#
+# This saves the editor from manually adding the review:in-progress label.
+# The label change then triggers on-review-start.yml to post the checklist.
+#
+# Only fires if the issue already has review:queued — so assigning someone
+# to an unrelated or not-yet-queued issue does nothing.
+
+name: Auto-label in-progress on assignment
+
+on:
+  issues:
+    types: [assigned]
+
+jobs:
+  auto-label:
+    if: contains(github.event.issue.labels.*.name, 'review:queued')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Add review:in-progress label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['review:in-progress'],
+            });
+
+            core.info(
+              `Added review:in-progress to issue #${context.issue.number} ` +
+              `(assigned: ${context.payload.assignee.login})`
+            );
