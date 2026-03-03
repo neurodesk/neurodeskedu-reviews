@@ -24,7 +24,7 @@
 
 ### Documentation
 
-- [ ] **A statement of need:** Do the authors clearly state the need for this notebook and who the target audience is?
+- [ ] **A statement of need:** Do the authors clearly state the need or the purpose for this notebook?
 - [ ] **Installation instructions:** Is there a clearly stated list of dependencies? (Ideally these should be handled with an automated package management solution.)
 
 
