@@ -25,7 +25,7 @@
 ### Documentation
 
 - [ ] **A statement of need:** Do the authors clearly state the need or the purpose for this notebook?
-- [ ] **Installation instructions:** Is there a clearly stated list of dependencies? (Ideally these should be handled with an automated package management solution.)
+- [ ] **Installation instructions:** Is the section "Load software tools and import python libraries" present? Is the installation process clear?
 
 
 ### Instructional design
