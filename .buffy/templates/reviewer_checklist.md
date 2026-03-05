@@ -15,7 +15,7 @@
 - [ ] **Date:** Is the notebook dated?
 - [ ] **Citations:** Is the software contained in the notebook properly cited?
 - [ ] **References:** Do all archival references that should have a DOI list one (e.g., papers, datasets, software)?
-- [ ] **Format:** Does the notebook follow the NeurodeskEDU template?
+- [ ] **Format:** Does the notebook follow the NeurodeskEDU template? If the notebook does not follow the template, but is for example built as a RISE presentation or intended to demonstrate a framework or feature, is the sequence logical and easy to follow? Are code blocks commented where necessary? 
 
 ### Functionality
 
