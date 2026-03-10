@@ -164,7 +164,7 @@ jobs:
           REVIEW_ID: ${{ steps.inject.outputs.review_id }}
           SOURCE_PATH: ${{ steps.inject.outputs.source_path }}
         with:
-          github-token: ${{ secrets.NEURODESKEDU_DISPATCH_TOKEN }}
+          github-token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
           script: |
             const reviewId = process.env.REVIEW_ID;
             const sourcePath = process.env.SOURCE_PATH;
